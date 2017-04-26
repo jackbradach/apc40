@@ -33,7 +33,6 @@ class Knob():
         self._m_out.send_message([chan, self._knob_ctrl_id, v])
         self._position[track] = v
 
-
     def set_led_ring_type(self, track, v):
         chan = self.CHAN_BASE + track
         self._m_out.send_message([chan, self._led_ctrl_id, v])
@@ -55,19 +54,30 @@ class Knob():
         self.set_position(track, pos)
 
 class Button():
-    """Button types can be multicolor, unicolor, or plain"""
-    def __init__(self, m_out, channel, note, type):
-        self._m_out = m_out
-        self._channel = channel
+    """Simple button"""
+    def __init__(self, m_out, note):
+        self._send = m_out.send_message
         self._note = note
+        self._channel = 0
+        self._is_on = False
 
     @property
-    def velocity(self):
-        pass
+    def is_on(self):
+        return self._is_on
 
-    @velocity.setter
-    def velocity(self, v):
-        self._m_out.send_message([self._channel, self._note, self._velocity])
+    @is_on.setter
+    def is_on(self, v):
+        self._is_on = v
+
+    def on(self):
+        n = 0x90 + self._note # 0x90 == MIDI 'note on'
+        self._send([self._channel, n, 0])
+        self._is_on = True
+
+    def off(self, v):
+        n = 0x80 + self._note # 0x80 == MIDI 'note_off'
+        self._send([self._channel, n, 0])
+        self._is_on = False
 
 
 class Slider():
@@ -78,8 +88,45 @@ class Slider():
     def value(self):
         return None
 
+class TrackControl():
+    BASE_ID = 0x30
+    def __init__(self, m_out):
+
+        # Track control has 8 knobs...
+        self._knobs = []
+        for i in range(0, 8):
+            self._knobs.append(Knob(m_out, BASE_ID + i))
+
+        # ... and 4 light-up buttons
+        # TODO: replace this loop with the four, named button enumerations
+        self._buttons = []
+        for i in range(0, 4):
+            self._buttons.append(Button(m_out, 0x57))
+
+
+class Activator():
+    def __init__(self):
+        pass
+
+class SoloCue():
+    def __init__(self):
+        pass
+
+class RecordArm():
+    def __init__(self):
+        pass
+
 class ClipLaunchGrid():
     def __init__(self):
+        self._buttons = []
+
+#        for (i in range(0, 8)): # 8 tracks
+
+
+
+#        for (i in range(0, 4)):
+#            self._buttons.append(Button(m_out, 0x57))
+
         pass
 
 
