@@ -151,12 +151,16 @@ class APC40():
             self._m_in = None
             self._m_out = None
         else:
-            self._m_in = rtmidi.MidiIn()
-            self._m_out = rtmidi.MidiOut()
+            self._m_in = rtmidi.MidiIn(name="ACP40 Bridge In")
+            self._m_out = rtmidi.MidiOut(name="APC40 Bridge Out")
             (port_in, port_out) = self._find_port_ids()
             self._m_in.open_port(port_in)
             self._m_out.open_port(port_out)
-            self._m_in.set_callback(self)
+            self._m_in.set_error_callback(self._error_callback)
+            self._m_out.set_error_callback(self._error_callback)
+            self._m_in.set_callback(self._new_data_callback)
+            self._m_in.ignore_types(sysex=False)
+            self._set_control_mode()
 
     def _find_port_ids(self):
         try:
@@ -172,9 +176,50 @@ class APC40():
 
         return (port_in, port_out)
 
-    def __call__(self, event, data=None):
+    def _set_control_mode(self):
+        """Sets the APC40 to 'Alternate Ableton Live Mode', which makes every
+        button momentary, disables the track banking, and makes the ring LEDs
+        controlled by the host.  I reckon that'd be the easiest to deal with"""
+
+        # Byte sequence to set the mode.
+        CTRL_MODE = 0x42
+        CTRL_MODE_REQ = [ 0xF0, 0x47, 0x00, 0x73, 0x60, 0x00, 0x04,
+                          CTRL_MODE, 0x00, 0x00, 0x00, 0xF7 ]
+        self._m_out.send_message(CTRL_MODE_REQ)
+
+    def _error_callback(self, event, data=None):
+        raise(event)
+
+    def _new_data_callback(self, event, data=None):
         message, deltatime = event
-        print("[%s] @%0.6f %r" % (self._m_in, deltatime, message))
+        (ch, note, vel) = message
+        print("+%0.6fsec ch: %02xh note: %02xh vel: %02xh" % \
+            (deltatime, ch, note, vel))
+
+    def inquire(self):
+        """Send an MMC Device Enquiry message to the APC40 and return the
+        useful results as a dict.  This temporarily disables the message
+        callback so it can poll for the response."""
+
+        # Byte sequence for a Device Inquiry Request message, taken
+        # from page 4 of the Comms Protocol manual.  We'll return
+        # the bytes it kicks back in a dictionary.
+        DEV_INQUIRE_REQ = [0xF0, 0x7E, 0x00, 0x06, 0x01, 0xF7]
+
+        self._m_in.cancel_callback()
+        self._m_out.send_message(DEV_INQUIRE_REQ)
+        event = None
+        while (event is None):
+            event = self._m_in.get_message()
+        self._m_in.set_callback(self._new_data_callback)
+        msg = event[0]
+
+        data = {}
+        data['sysex_dev_id'] = msg[13]  # System Exclusive Device ID
+        data['version'] = \
+            ('{:d}.{:d}') \
+            .format(msg[9] << 8 | msg[10], msg[11] << 8 | msg[12])
+        return data
 
     def write(self, channel, note, velocity):
         self._m_out.send_message([channel, note, velocity])
